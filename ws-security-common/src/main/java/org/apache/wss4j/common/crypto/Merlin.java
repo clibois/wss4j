@@ -49,9 +49,9 @@ import java.security.cert.PKIXParameters;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509CRL;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
@@ -73,24 +73,24 @@ import org.apache.wss4j.common.util.Loader;
  * being the truststore.
  */
 public class Merlin extends CryptoBase {
-    
+
     public static final String ENCRYPTED_PASSWORD_PREFIX = "ENC(";
     public static final String ENCRYPTED_PASSWORD_SUFFIX = ")";
-    
+
     public static final String PREFIX = "org.apache.wss4j.crypto.merlin.";
     public static final String OLD_PREFIX = "org.apache.ws.security.crypto.merlin.";
-    
+
     /*
      * Deprecated types
      */
     public static final String OLD_KEYSTORE_FILE = "file";
-    
+
     /*
      * Crypto providers
      */
     public static final String CRYPTO_KEYSTORE_PROVIDER = "keystore.provider";
     public static final String CRYPTO_CERT_PROVIDER = "cert.provider";
-    
+
     /*
      * KeyStore configuration types
      */
@@ -99,7 +99,7 @@ public class Merlin extends CryptoBase {
     public static final String KEYSTORE_TYPE ="keystore.type";
     public static final String KEYSTORE_ALIAS ="keystore.alias";
     public static final String KEYSTORE_PRIVATE_PASSWORD ="keystore.private.password";
-    
+
     /*
      * TrustStore configuration types
      */
@@ -107,28 +107,29 @@ public class Merlin extends CryptoBase {
     public static final String TRUSTSTORE_FILE ="truststore.file";
     public static final String TRUSTSTORE_PASSWORD ="truststore.password";
     public static final String TRUSTSTORE_TYPE = "truststore.type";
-    
+
     /*
      * CRL configuration
      */
     public static final String X509_CRL_FILE = "x509crl.file";
-    
-    private static final org.slf4j.Logger LOG = 
-        org.slf4j.LoggerFactory.getLogger(Merlin.class);
+
+    private static final org.slf4j.Logger LOG =
+            org.slf4j.LoggerFactory.getLogger(Merlin.class);
     private static final boolean DO_DEBUG = LOG.isDebugEnabled();
+    private static final String COMMA_SEPARATOR = ",";
 
     protected Properties properties;
     protected KeyStore keystore;
     protected KeyStore truststore;
     protected CertStore crlCertStore;
     protected boolean loadCACerts;
-    protected boolean privatePasswordSet; 
+    protected boolean privatePasswordSet;
     protected PasswordEncryptor passwordEncryptor;
-    
+
     public Merlin() {
         // default constructor
     }
-    
+
     public Merlin(boolean loadCACerts, String cacertsPasswd) {
         super();
 
@@ -156,23 +157,23 @@ public class Merlin extends CryptoBase {
             }
         }
     }
-    
-    public Merlin(Properties properties, ClassLoader loader, PasswordEncryptor passwordEncryptor) 
-        throws WSSecurityException, IOException {
+
+    public Merlin(Properties properties, ClassLoader loader, PasswordEncryptor passwordEncryptor)
+            throws WSSecurityException, IOException {
         loadProperties(properties, loader, passwordEncryptor);
     }
-    
+
     public void loadProperties(
-        Properties properties, 
-        ClassLoader loader, 
-        PasswordEncryptor passwordEncryptor
+            Properties properties,
+            ClassLoader loader,
+            PasswordEncryptor passwordEncryptor
     ) throws WSSecurityException, IOException {
         if (properties == null) {
             return;
         }
         this.properties = properties;
         this.passwordEncryptor = passwordEncryptor;
-        
+
         String prefix = PREFIX;
         for (Object key : properties.keySet()) {
             if (key instanceof String) {
@@ -185,7 +186,7 @@ public class Merlin extends CryptoBase {
                 }
             }
         }
-        
+
         //
         // Load the provider(s)
         //
@@ -226,8 +227,8 @@ public class Merlin extends CryptoBase {
                 keystore = load(is, passwd, provider, type);
                 if (DO_DEBUG) {
                     LOG.debug(
-                        "The KeyStore " + keyStoreLocation + " of type " + type 
-                        + " has been loaded"
+                            "The KeyStore " + keyStoreLocation + " of type " + type
+                                    + " has been loaded"
                     );
                 }
                 String privatePasswd = properties.getProperty(prefix + KEYSTORE_PRIVATE_PASSWORD);
@@ -244,7 +245,7 @@ public class Merlin extends CryptoBase {
                 LOG.debug("The KeyStore is not loaded as KEYSTORE_FILE is null");
             }
         }
-        
+
         //
         // Load the TrustStore
         //
@@ -266,8 +267,8 @@ public class Merlin extends CryptoBase {
                 truststore = load(is, passwd, provider, type);
                 if (DO_DEBUG) {
                     LOG.debug(
-                        "The TrustStore " + trustStoreLocation + " of type " + type 
-                        + " has been loaded"
+                            "The TrustStore " + trustStoreLocation + " of type " + type
+                                    + " has been loaded"
                     );
                 }
                 loadCACerts = false;
@@ -308,53 +309,66 @@ public class Merlin extends CryptoBase {
         //
         // Load the CRL file
         //
-        String crlLocation = properties.getProperty(prefix + X509_CRL_FILE);
-        if (crlLocation != null) {
-            crlLocation = crlLocation.trim();
-            InputStream is = loadInputStream(loader, crlLocation);
-
-            try {
-                CertificateFactory cf = getCertificateFactory();
-                X509CRL crl = (X509CRL)cf.generateCRL(is);
-                
-                if (provider == null || provider.length() == 0) {
-                    crlCertStore = 
-                        CertStore.getInstance(
-                            "Collection",
-                            new CollectionCertStoreParameters(Collections.singletonList(crl))
-                        );
-                } else {
-                    crlCertStore = 
-                        CertStore.getInstance(
-                            "Collection",
-                            new CollectionCertStoreParameters(Collections.singletonList(crl)),
-                            provider
-                        );
+        String crlLocations = properties.getProperty(prefix + X509_CRL_FILE);
+        if (crlLocations != null) {
+            String[] splittedCrlsLocations=crlLocations.split(COMMA_SEPARATOR);
+            List<X509CRL> crls=new ArrayList();
+            for (int i = 0; i < splittedCrlsLocations.length; i++) {
+                String crlLocation = splittedCrlsLocations[i];
+                crlLocation = crlLocation.trim();
+                InputStream is = loadInputStream(loader, crlLocation);
+                try {
+                    CertificateFactory cf = getCertificateFactory();
+                    X509CRL crl = (X509CRL)cf.generateCRL(is);
+                    crls.add(crl);
+                } catch (Exception e) {
+                    if (DO_DEBUG) {
+                        LOG.debug(e.getMessage(), e);
+                    }
+                    throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE,e, "ioError00");
+                } finally {
+                    if (is != null) {
+                        is.close();
+                    }
                 }
-                if (DO_DEBUG) {
-                    LOG.debug(
-                        "The CRL " + crlLocation + " has been loaded"
-                    );
+            }
+            try {
+                if (provider == null || provider.length() == 0) {
+                    crlCertStore =
+                            CertStore.getInstance(
+                                    "Collection",
+                                    new CollectionCertStoreParameters(crls)
+                            );
+
+                } else {
+                    crlCertStore =
+                            CertStore.getInstance(
+                                    "Collection",
+                                    new CollectionCertStoreParameters(crls),
+                                    provider
+                            );
                 }
             } catch (Exception e) {
                 if (DO_DEBUG) {
                     LOG.debug(e.getMessage(), e);
                 }
-                throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, e, "ioError00");
-            } finally {
-                if (is != null) {
-                    is.close();
-                }
+                throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, e,"ioError00");
             }
+            if (DO_DEBUG) {
+                LOG.debug(
+                        "The CRL " + crlLocations + " has been loaded"
+                );
+            }
+
         }
     }
 
-    
+
     /**
      * Load a KeyStore object as an InputStream, using the ClassLoader and location arguments
      */
-    public static InputStream loadInputStream(ClassLoader loader, String location) 
-        throws WSSecurityException, IOException {
+    public static InputStream loadInputStream(ClassLoader loader, String location)
+            throws WSSecurityException, IOException {
         InputStream is = null;
         if (location != null) {
             java.net.URL url = null;
@@ -371,7 +385,7 @@ public class Merlin extends CryptoBase {
             if (url != null) {
                 is = url.openStream();
             }
-    
+
             //
             // If we don't find it, then look on the file system.
             //
@@ -383,15 +397,15 @@ public class Merlin extends CryptoBase {
                         LOG.debug(e.getMessage(), e);
                     }
                     throw new WSSecurityException(
-                        WSSecurityException.ErrorCode.FAILURE, e, "proxyNotFound", 
-                        new Object[] {location}
+                            WSSecurityException.ErrorCode.FAILURE, e, "proxyNotFound",
+                            new Object[] {location}
                     );
                 }
             }
         }
         return is;
     }
-    
+
 
     /**
      * Loads the keystore from an <code>InputStream </code>.
@@ -400,19 +414,19 @@ public class Merlin extends CryptoBase {
      * @param input <code>InputStream</code> to read from
      * @throws WSSecurityException
      */
-    public KeyStore load(InputStream input, String storepass, String provider, String type) 
-        throws WSSecurityException {
+    public KeyStore load(InputStream input, String storepass, String provider, String type)
+            throws WSSecurityException {
         KeyStore ks = null;
-        
+
         try {
             if (provider == null || provider.length() == 0) {
                 ks = KeyStore.getInstance(type);
             } else {
                 ks = KeyStore.getInstance(type, provider);
             }
-                    
+
             ks.load(input, storepass == null || storepass.length() == 0
-                ? new char[0] : storepass.toCharArray());
+                    ? new char[0] : storepass.toCharArray());
         } catch (IOException e) {
             if (DO_DEBUG) {
                 LOG.debug(e.getMessage(), e);
@@ -431,11 +445,11 @@ public class Merlin extends CryptoBase {
         }
         return ks;
     }
-    
+
     //
     // Accessor methods
     //
-    
+
     /**
      * Gets the Keystore that was loaded
      *
@@ -444,7 +458,7 @@ public class Merlin extends CryptoBase {
     public KeyStore getKeyStore() {
         return keystore;
     }
-    
+
     /**
      * Set the Keystore on this Crypto instance
      *
@@ -453,7 +467,7 @@ public class Merlin extends CryptoBase {
     public void setKeyStore(KeyStore keyStore) {
         keystore = keyStore;
     }
-    
+
     /**
      * Gets the trust store that was loaded by the underlying implementation
      *
@@ -462,7 +476,7 @@ public class Merlin extends CryptoBase {
     public KeyStore getTrustStore() {
         return truststore;
     }
-    
+
     /**
      * Set the trust store on this Crypto instance
      *
@@ -471,27 +485,27 @@ public class Merlin extends CryptoBase {
     public void setTrustStore(KeyStore trustStore) {
         truststore = trustStore;
     }
-    
+
     /**
      * Set the CertStore from which to obtain a list of CRLs for Certificate Revocation
      * checking.
-     * @param crlCertStore the CertStore from which to obtain a list of CRLs for Certificate 
+     * @param crlCertStore the CertStore from which to obtain a list of CRLs for Certificate
      * Revocation checking.
      */
     public void setCRLCertStore(CertStore crlCertStore) {
         this.crlCertStore = crlCertStore;
     }
-    
+
     /**
      * Get the CertStore from which to obtain a list of CRLs for Certificate Revocation
      * checking.
-     * @return the CertStore from which to obtain a list of CRLs for Certificate 
+     * @return the CertStore from which to obtain a list of CRLs for Certificate
      * Revocation checking.
      */
     public CertStore getCRLCertStore() {
         return crlCertStore;
     }
-    
+
     /**
      * Singleton certificate factory for this Crypto instance.
      * <p/>
@@ -514,10 +528,10 @@ public class Merlin extends CryptoBase {
         if (provider != null) {
             factory = certFactMap.get(provider);
         } else if (keyStoreProvider != null) {
-            factory = 
-                certFactMap.get(mapKeystoreProviderToCertProvider(keyStoreProvider));
+            factory =
+                    certFactMap.get(mapKeystoreProviderToCertProvider(keyStoreProvider));
             if (factory == null) {
-                factory = certFactMap.get(keyStoreProvider);                
+                factory = certFactMap.get(keyStoreProvider);
             }
         } else {
             factory = certFactMap.get("DEFAULT");
@@ -527,13 +541,13 @@ public class Merlin extends CryptoBase {
                 if (provider == null || provider.length() == 0) {
                     if (keyStoreProvider != null && keyStoreProvider.length() != 0) {
                         try {
-                            factory = 
-                                CertificateFactory.getInstance(
-                                    "X.509", mapKeystoreProviderToCertProvider(keyStoreProvider)
-                                );
+                            factory =
+                                    CertificateFactory.getInstance(
+                                            "X.509", mapKeystoreProviderToCertProvider(keyStoreProvider)
+                                    );
                             certFactMap.put(keyStoreProvider, factory);
                             certFactMap.put(
-                                mapKeystoreProviderToCertProvider(keyStoreProvider), factory
+                                    mapKeystoreProviderToCertProvider(keyStoreProvider), factory
                             );
                         } catch (Exception ex) {
                             LOG.debug(ex.getMessage(), ex);
@@ -552,28 +566,28 @@ public class Merlin extends CryptoBase {
                 certFactMap.put(factory.getProvider().getName(), factory);
             } catch (CertificateException e) {
                 throw new WSSecurityException(
-                    WSSecurityException.ErrorCode.SECURITY_TOKEN_UNAVAILABLE, e, "unsupportedCertType"
+                        WSSecurityException.ErrorCode.SECURITY_TOKEN_UNAVAILABLE, e, "unsupportedCertType"
                 );
             } catch (NoSuchProviderException e) {
                 throw new WSSecurityException(
-                    WSSecurityException.ErrorCode.SECURITY_TOKEN_UNAVAILABLE, e, "noSecProvider"
+                        WSSecurityException.ErrorCode.SECURITY_TOKEN_UNAVAILABLE, e, "noSecProvider"
                 );
             }
         }
         return factory;
     }
-    
+
     private String mapKeystoreProviderToCertProvider(String s) {
         if ("SunJSSE".equals(s)) {
             return "SUN";
         }
         return s;
     }
-    
+
     /**
-     * Retrieves the identifier name of the default certificate. This should be the certificate 
-     * that is used for signature and encryption. This identifier corresponds to the certificate 
-     * that should be used whenever KeyInfo is not present in a signed or an encrypted 
+     * Retrieves the identifier name of the default certificate. This should be the certificate
+     * that is used for signature and encryption. This identifier corresponds to the certificate
+     * that should be used whenever KeyInfo is not present in a signed or an encrypted
      * message. May return null. The identifier is implementation specific, e.g. it could be the
      * KeyStore alias.
      *
@@ -584,7 +598,7 @@ public class Merlin extends CryptoBase {
         if (defaultAlias != null) {
             return defaultAlias;
         }
-        
+
         if (keystore != null) {
             try {
                 Enumeration<String> as = keystore.aliases();
@@ -597,13 +611,13 @@ public class Merlin extends CryptoBase {
                 }
             } catch (KeyStoreException ex) {
                 throw new WSSecurityException(
-                    WSSecurityException.ErrorCode.FAILURE, ex, "keystore"
+                        WSSecurityException.ErrorCode.FAILURE, ex, "keystore"
                 );
-            } 
+            }
         }
         return null;
     }
-    
+
     //
     // Keystore-specific Crypto functionality methods
     //
@@ -611,7 +625,7 @@ public class Merlin extends CryptoBase {
     /**
      * Get an X509Certificate (chain) corresponding to the CryptoType argument. The supported
      * types are as follows:
-     * 
+     *
      * TYPE.ISSUER_SERIAL - A certificate (chain) is located by the issuer name and serial number
      * TYPE.THUMBPRINT_SHA1 - A certificate (chain) is located by the SHA1 of the (root) cert
      * TYPE.SKI_BYTES - A certificate (chain) is located by the SKI bytes of the (root) cert
@@ -626,35 +640,35 @@ public class Merlin extends CryptoBase {
         CryptoType.TYPE type = cryptoType.getType();
         X509Certificate[] certs = null;
         switch (type) {
-        case ISSUER_SERIAL: {
-            certs = getX509Certificates(cryptoType.getIssuer(), cryptoType.getSerial());
-            break;
-        }
-        case THUMBPRINT_SHA1: {
-            certs = getX509Certificates(cryptoType.getBytes());
-            break;
-        }
-        case SKI_BYTES: {
-            certs = getX509CertificatesSKI(cryptoType.getBytes());
-            break;
-        }
-        case SUBJECT_DN: {
-            certs = getX509CertificatesSubjectDN(cryptoType.getSubjectDN());
-            break;
-        }
-        case ALIAS: {
-            certs = getX509Certificates(cryptoType.getAlias());
-            break;
-        }
-        case ENDPOINT: {
-            break;
-        }
+            case ISSUER_SERIAL: {
+                certs = getX509Certificates(cryptoType.getIssuer(), cryptoType.getSerial());
+                break;
+            }
+            case THUMBPRINT_SHA1: {
+                certs = getX509Certificates(cryptoType.getBytes());
+                break;
+            }
+            case SKI_BYTES: {
+                certs = getX509CertificatesSKI(cryptoType.getBytes());
+                break;
+            }
+            case SUBJECT_DN: {
+                certs = getX509CertificatesSubjectDN(cryptoType.getSubjectDN());
+                break;
+            }
+            case ALIAS: {
+                certs = getX509Certificates(cryptoType.getAlias());
+                break;
+            }
+            case ENDPOINT: {
+                break;
+            }
         }
         return certs;
     }
 
     /**
-     * Get the implementation-specific identifier corresponding to the cert parameter. In this 
+     * Get the implementation-specific identifier corresponding to the cert parameter. In this
      * case, the identifier corresponds to a KeyStore alias.
      * @param cert The X509Certificate for which to search for an identifier
      * @return the identifier corresponding to the cert parameter
@@ -662,18 +676,18 @@ public class Merlin extends CryptoBase {
      */
     public String getX509Identifier(X509Certificate cert) throws WSSecurityException {
         String identifier = null;
-        
+
         if (keystore != null) {
             identifier = getIdentifier(cert, keystore);
         }
-        
+
         if (identifier == null && truststore != null) {
             identifier = getIdentifier(cert, truststore);
         }
-        
+
         return identifier;
     }
-    
+
     /**
      * Gets the private key corresponding to the certificate.
      *
@@ -682,26 +696,26 @@ public class Merlin extends CryptoBase {
      * @return The private key
      */
     public PrivateKey getPrivateKey(
-        X509Certificate certificate, 
-        CallbackHandler callbackHandler
+            X509Certificate certificate,
+            CallbackHandler callbackHandler
     ) throws WSSecurityException {
         if (keystore == null) {
-            throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, "empty", 
-                                          new Object[] {"The keystore is null"});
+            throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, "empty",
+                    new Object[] {"The keystore is null"});
         }
         if (callbackHandler == null) {
-            throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, "empty", 
-                                          new Object[] {"The CallbackHandler is null"});
+            throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, "empty",
+                    new Object[] {"The CallbackHandler is null"});
         }
-        
+
         String identifier = getIdentifier(certificate, keystore);
         try {
             if (identifier == null || !keystore.isKeyEntry(identifier)) {
                 String msg = "Cannot find key for alias: [" + identifier + "]";
                 String logMsg = createKeyStoreErrorMessage(keystore);
                 LOG.error(msg + logMsg);
-                throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, "empty", 
-                                              new Object[] {msg});
+                throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, "empty",
+                        new Object[] {msg});
             }
             String password = getPassword(identifier, callbackHandler);
             if (password == null && privatePasswordSet) {
@@ -714,34 +728,34 @@ public class Merlin extends CryptoBase {
                     password = decryptPassword(password, passwordEncryptor);
                 }
             }
-            Key keyTmp = keystore.getKey(identifier, password == null 
-                                         ? new char[]{} : password.toCharArray());
+            Key keyTmp = keystore.getKey(identifier, password == null
+                    ? new char[]{} : password.toCharArray());
             if (!(keyTmp instanceof PrivateKey)) {
                 String msg = "Key is not a private key, alias: [" + identifier + "]";
                 String logMsg = createKeyStoreErrorMessage(keystore);
                 LOG.error(msg + logMsg);
                 throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, "empty",
-                                              new Object[] {msg});
+                        new Object[] {msg});
             }
             return (PrivateKey) keyTmp;
         } catch (KeyStoreException ex) {
             throw new WSSecurityException(
-                WSSecurityException.ErrorCode.FAILURE, ex, "noPrivateKey", 
-                new Object[] {ex.getMessage()}
+                    WSSecurityException.ErrorCode.FAILURE, ex, "noPrivateKey",
+                    new Object[] {ex.getMessage()}
             );
         } catch (UnrecoverableKeyException ex) {
             throw new WSSecurityException(
-                WSSecurityException.ErrorCode.FAILURE, ex, "noPrivateKey",
-                new Object[] {ex.getMessage()}
+                    WSSecurityException.ErrorCode.FAILURE, ex, "noPrivateKey",
+                    new Object[] {ex.getMessage()}
             );
         } catch (NoSuchAlgorithmException ex) {
             throw new WSSecurityException(
-                WSSecurityException.ErrorCode.FAILURE, ex, "noPrivateKey", 
-                new Object[] {ex.getMessage()}
+                    WSSecurityException.ErrorCode.FAILURE, ex, "noPrivateKey",
+                    new Object[] {ex.getMessage()}
             );
         }
     }
-    
+
     /**
      * Gets the private key corresponding to the identifier.
      *
@@ -750,20 +764,20 @@ public class Merlin extends CryptoBase {
      * @return The private key
      */
     public PrivateKey getPrivateKey(
-        String identifier,
-        String password
+            String identifier,
+            String password
     ) throws WSSecurityException {
         if (keystore == null) {
-            throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, "empty", 
-                                          new Object[] {"The keystore is null"});
+            throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, "empty",
+                    new Object[] {"The keystore is null"});
         }
         try {
             if (identifier == null || !keystore.isKeyEntry(identifier)) {
                 String msg = "Cannot find key for alias: [" + identifier + "]";
                 String logMsg = createKeyStoreErrorMessage(keystore);
                 LOG.error(msg + logMsg);
-                throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, "empty", 
-                                              new Object[] {msg});
+                throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, "empty",
+                        new Object[] {msg});
             }
             String pwd = password;
             if (pwd == null && privatePasswordSet) {
@@ -775,47 +789,47 @@ public class Merlin extends CryptoBase {
                     pwd = pwd.trim();
                 }
             }
-            Key keyTmp = keystore.getKey(identifier, pwd == null 
-                                         ? new char[]{} : pwd.toCharArray());
+            Key keyTmp = keystore.getKey(identifier, pwd == null
+                    ? new char[]{} : pwd.toCharArray());
             if (!(keyTmp instanceof PrivateKey)) {
                 String msg = "Key is not a private key, alias: [" + identifier + "]";
                 String logMsg = createKeyStoreErrorMessage(keystore);
                 LOG.error(msg + logMsg);
-                throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, "empty", 
-                                              new Object[] {msg});
+                throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, "empty",
+                        new Object[] {msg});
             }
             return (PrivateKey) keyTmp;
         } catch (KeyStoreException ex) {
             throw new WSSecurityException(
-                WSSecurityException.ErrorCode.FAILURE, ex, "noPrivateKey", 
-                new Object[] {ex.getMessage()}
+                    WSSecurityException.ErrorCode.FAILURE, ex, "noPrivateKey",
+                    new Object[] {ex.getMessage()}
             );
         } catch (UnrecoverableKeyException ex) {
             throw new WSSecurityException(
-                WSSecurityException.ErrorCode.FAILURE, ex, "noPrivateKey", 
-                new Object[] {ex.getMessage()}
+                    WSSecurityException.ErrorCode.FAILURE, ex, "noPrivateKey",
+                    new Object[] {ex.getMessage()}
             );
         } catch (NoSuchAlgorithmException ex) {
             throw new WSSecurityException(
-                WSSecurityException.ErrorCode.FAILURE, ex, "noPrivateKey", 
-                new Object[] {ex.getMessage()}
+                    WSSecurityException.ErrorCode.FAILURE, ex, "noPrivateKey",
+                    new Object[] {ex.getMessage()}
             );
         }
     }
-    
+
     /**
      * Evaluate whether a given certificate chain should be trusted.
      *
      * @param certs Certificate chain to validate
      * @param enableRevocation whether to enable CRL verification or not
      * @param subjectCertConstraints A set of constraints on the Subject DN of the certificates
-     * 
+     *
      * @throws WSSecurityException if the certificate chain is invalid
      */
     public void verifyTrust(
-        X509Certificate[] certs, 
-        boolean enableRevocation,
-        Collection<Pattern> subjectCertConstraints
+            X509Certificate[] certs,
+            boolean enableRevocation,
+            Collection<Pattern> subjectCertConstraints
     ) throws WSSecurityException {
         //
         // FIRST step - Search the keystore for the transmitted certificate
@@ -823,11 +837,11 @@ public class Merlin extends CryptoBase {
         if (certs.length == 1 && !enableRevocation) {
             String issuerString = certs[0].getIssuerX500Principal().getName();
             BigInteger issuerSerial = certs[0].getSerialNumber();
-            
+
             CryptoType cryptoType = new CryptoType(CryptoType.TYPE.ISSUER_SERIAL);
             cryptoType.setIssuerSerial(issuerString, issuerSerial);
             X509Certificate[] foundCerts = getX509Certificates(cryptoType);
-    
+
             //
             // If a certificate has been found, the certificates must be compared
             // to ensure against phony DNs (compare encoded form including signature)
@@ -837,24 +851,24 @@ public class Merlin extends CryptoBase {
                     certs[0].checkValidity();
                 } catch (CertificateExpiredException e) {
                     throw new WSSecurityException(
-                        WSSecurityException.ErrorCode.FAILED_CHECK, e, "invalidCert"
+                            WSSecurityException.ErrorCode.FAILED_CHECK, e, "invalidCert"
                     );
                 } catch (CertificateNotYetValidException e) {
                     throw new WSSecurityException(
-                        WSSecurityException.ErrorCode.FAILED_CHECK, e, "invalidCert"
+                            WSSecurityException.ErrorCode.FAILED_CHECK, e, "invalidCert"
                     );
                 }
                 if (LOG.isDebugEnabled()) {
                     LOG.debug(
-                        "Direct trust for certificate with " + certs[0].getSubjectX500Principal().getName()
+                            "Direct trust for certificate with " + certs[0].getSubjectX500Principal().getName()
                     );
                 }
                 return;
             }
         }
-        
+
         //
-        // SECOND step - Search for the issuer cert (chain) of the transmitted certificate in the 
+        // SECOND step - Search for the issuer cert (chain) of the transmitted certificate in the
         // keystore or the truststore
         //
         X509Certificate[] x509certs = certs;
@@ -863,23 +877,23 @@ public class Merlin extends CryptoBase {
             CryptoType cryptoType = new CryptoType(CryptoType.TYPE.SUBJECT_DN);
             cryptoType.setSubjectDN(issuerString);
             X509Certificate[] foundCerts = getX509Certificates(cryptoType);
-    
+
             // If the certs have not been found, the issuer is not in the keystore/truststore
             // As a direct result, do not trust the transmitted certificate
             if (foundCerts == null || foundCerts.length < 1) {
                 String subjectString = certs[0].getSubjectX500Principal().getName();
                 if (LOG.isDebugEnabled()) {
                     LOG.debug(
-                        "No certs found in keystore for issuer " + issuerString 
-                        + " of certificate for " + subjectString
+                            "No certs found in keystore for issuer " + issuerString
+                                    + " of certificate for " + subjectString
                     );
                 }
                 throw new WSSecurityException(
-                    WSSecurityException.ErrorCode.FAILURE, "certpath", 
-                    new Object[] {"No trusted certs found"}
+                        WSSecurityException.ErrorCode.FAILURE, "certpath",
+                        new Object[] {"No trusted certs found"}
                 );
             }
-            
+
             //
             // Form a certificate chain from the transmitted certificate
             // and the certificate(s) of the issuer from the keystore/truststore
@@ -888,17 +902,17 @@ public class Merlin extends CryptoBase {
             x509certs[0] = certs[0];
             System.arraycopy(foundCerts, 0, x509certs, 1, foundCerts.length);
         }
-        
+
         //
         // THIRD step
         // Check the certificate trust path for the issuer cert chain
         //
         if (LOG.isDebugEnabled()) {
             LOG.debug(
-                "Preparing to validate certificate path for issuer " + issuerString
+                    "Preparing to validate certificate path for issuer " + issuerString
             );
         }
-        
+
         try {
             // Generate cert path
             List<X509Certificate> certList = Arrays.asList(x509certs);
@@ -909,11 +923,11 @@ public class Merlin extends CryptoBase {
                 Enumeration<String> truststoreAliases = truststore.aliases();
                 while (truststoreAliases.hasMoreElements()) {
                     String alias = truststoreAliases.nextElement();
-                    X509Certificate cert = 
-                        (X509Certificate) truststore.getCertificate(alias);
+                    X509Certificate cert =
+                            (X509Certificate) truststore.getCertificate(alias);
                     if (cert != null) {
-                        TrustAnchor anchor = 
-                            new TrustAnchor(cert, cert.getExtensionValue(NAME_CONSTRAINTS_OID));
+                        TrustAnchor anchor =
+                                new TrustAnchor(cert, cert.getExtensionValue(NAME_CONSTRAINTS_OID));
                         set.add(anchor);
                     }
                 }
@@ -928,11 +942,11 @@ public class Merlin extends CryptoBase {
                 Enumeration<String> aliases = keystore.aliases();
                 while (aliases.hasMoreElements()) {
                     String alias = aliases.nextElement();
-                    X509Certificate cert = 
-                        (X509Certificate) keystore.getCertificate(alias);
+                    X509Certificate cert =
+                            (X509Certificate) keystore.getCertificate(alias);
                     if (cert != null) {
-                        TrustAnchor anchor = 
-                            new TrustAnchor(cert, cert.getExtensionValue(NAME_CONSTRAINTS_OID));
+                        TrustAnchor anchor =
+                                new TrustAnchor(cert, cert.getExtensionValue(NAME_CONSTRAINTS_OID));
                         set.add(anchor);
                     }
                 }
@@ -946,63 +960,63 @@ public class Merlin extends CryptoBase {
             } else {
                 validator = CertPathValidator.getInstance("PKIX", provider);
             }
-            
+
             PKIXParameters param = createPKIXParameters(set, enableRevocation);
             validator.validate(path, param);
         } catch (NoSuchProviderException e) {
-                throw new WSSecurityException(
+            throw new WSSecurityException(
                     WSSecurityException.ErrorCode.FAILURE, e, "certpath"
-                );
+            );
         } catch (NoSuchAlgorithmException e) {
-                throw new WSSecurityException(
+            throw new WSSecurityException(
                     WSSecurityException.ErrorCode.FAILURE, e,
                     "certpath", new Object[] {e.getMessage()}
-                );
+            );
         } catch (CertificateException e) {
-                throw new WSSecurityException(
+            throw new WSSecurityException(
                     WSSecurityException.ErrorCode.FAILURE, e, "certpath"
-                );
+            );
         } catch (InvalidAlgorithmParameterException e) {
-                throw new WSSecurityException(
+            throw new WSSecurityException(
                     WSSecurityException.ErrorCode.FAILURE, e, "certpath"
-                );
+            );
         } catch (java.security.cert.CertPathValidatorException e) {
-                throw new WSSecurityException(
+            throw new WSSecurityException(
                     WSSecurityException.ErrorCode.FAILED_AUTHENTICATION, e, "certpath"
-                );
+            );
         } catch (KeyStoreException e) {
-                throw new WSSecurityException(
+            throw new WSSecurityException(
                     WSSecurityException.ErrorCode.FAILURE, e, "certpath"
-                );
+            );
         } catch (NullPointerException e) {
-                // NPE thrown by JDK 1.7 for one of the test cases
-                throw new WSSecurityException(
+            // NPE thrown by JDK 1.7 for one of the test cases
+            throw new WSSecurityException(
                     WSSecurityException.ErrorCode.FAILURE, e, "certpath"
-                );
+            );
         }
-        
+
         // Finally check Cert Constraints
         if (!matches(certs[0], subjectCertConstraints)) {
             throw new WSSecurityException(WSSecurityException.ErrorCode.FAILED_AUTHENTICATION);
         }
     }
-    
+
     // Separated out to allow subclasses to override it
     protected PKIXParameters createPKIXParameters(
-        Set<TrustAnchor> trustAnchors, boolean enableRevocation
+            Set<TrustAnchor> trustAnchors, boolean enableRevocation
     ) throws InvalidAlgorithmParameterException {
         PKIXParameters param = new PKIXParameters(trustAnchors);
         param.setRevocationEnabled(enableRevocation);
         if (enableRevocation && crlCertStore != null) {
             param.addCertStore(crlCertStore);
         }
-        
+
         return param;
     }
-    
+
     /**
      * Evaluate whether a given public key should be trusted.
-     * 
+     *
      * @param publicKey The PublicKey to be evaluated
      * @throws WSSecurityException if the PublicKey is invalid
      */
@@ -1013,17 +1027,17 @@ public class Merlin extends CryptoBase {
         if (publicKey == null) {
             throw new WSSecurityException(WSSecurityException.ErrorCode.FAILED_AUTHENTICATION);
         }
-        
+
         //
         // Search the keystore for the transmitted public key (direct trust). If not found
         // then search the truststore for the transmitted public key (direct trust)
         //
         if (!findPublicKeyInKeyStore(publicKey, keystore)
-            && !findPublicKeyInKeyStore(publicKey, truststore)) {
+                && !findPublicKeyInKeyStore(publicKey, truststore)) {
             throw new WSSecurityException(WSSecurityException.ErrorCode.FAILED_AUTHENTICATION);
         }
     }
-    
+
     /**
      * Get an X509 Certificate (chain) according to a given serial number and issuer string.
      *
@@ -1033,8 +1047,8 @@ public class Merlin extends CryptoBase {
      * @throws WSSecurityException
      */
     private X509Certificate[] getX509Certificates(
-        String issuer, 
-        BigInteger serialNumber
+            String issuer,
+            BigInteger serialNumber
     ) throws WSSecurityException {
         //
         // Convert the subject DN to a java X500Principal object first. This is to ensure
@@ -1060,25 +1074,25 @@ public class Merlin extends CryptoBase {
         if ((certs == null || certs.length == 0) && truststore != null) {
             certs = getCertificates(issuerName, serialNumber, truststore);
         }
-        
+
         if (certs == null || certs.length == 0) {
             return null;
         }
-        
+
         return Arrays.copyOf(certs, certs.length, X509Certificate[].class);
     }
-    
+
     /**
-     * Get an X509 Certificate (chain) of the X500Principal argument in the supplied KeyStore 
+     * Get an X509 Certificate (chain) of the X500Principal argument in the supplied KeyStore
      * @param issuerRDN either an X500Principal or a BouncyCastle X509Name instance.
      * @param store The KeyStore
      * @return an X509 Certificate (chain)
      * @throws WSSecurityException
      */
     private Certificate[] getCertificates(
-        Object issuerRDN, 
-        BigInteger serialNumber, 
-        KeyStore store
+            Object issuerRDN,
+            BigInteger serialNumber,
+            KeyStore store
     ) throws WSSecurityException {
         try {
             for (Enumeration<String> e = store.aliases(); e.hasMoreElements();) {
@@ -1098,8 +1112,8 @@ public class Merlin extends CryptoBase {
                 if (cert instanceof X509Certificate) {
                     X509Certificate x509cert = (X509Certificate) cert;
                     if (x509cert.getSerialNumber().compareTo(serialNumber) == 0) {
-                        Object certName = 
-                            createBCX509Name(x509cert.getIssuerX500Principal().getName());
+                        Object certName =
+                                createBCX509Name(x509cert.getIssuerX500Principal().getName());
                         if (certName.equals(issuerRDN)) {
                             return certs;
                         }
@@ -1108,12 +1122,12 @@ public class Merlin extends CryptoBase {
             }
         } catch (KeyStoreException e) {
             throw new WSSecurityException(
-                WSSecurityException.ErrorCode.FAILURE, e, "keystore"
+                    WSSecurityException.ErrorCode.FAILURE, e, "keystore"
             );
         }
         return new Certificate[]{};
     }
-    
+
     /**
      * Get an X509 Certificate (chain) according to a given Thumbprint.
      *
@@ -1123,12 +1137,12 @@ public class Merlin extends CryptoBase {
      */
     private X509Certificate[] getX509Certificates(byte[] thumbprint) throws WSSecurityException {
         MessageDigest sha = null;
-        
+
         try {
             sha = MessageDigest.getInstance("SHA1");
         } catch (NoSuchAlgorithmException e) {
             throw new WSSecurityException(
-                WSSecurityException.ErrorCode.FAILURE, e, "decoding.general"
+                    WSSecurityException.ErrorCode.FAILURE, e, "decoding.general"
             );
         }
         Certificate[] certs = null;
@@ -1140,25 +1154,25 @@ public class Merlin extends CryptoBase {
         if ((certs == null || certs.length == 0) && truststore != null) {
             certs = getCertificates(thumbprint, truststore, sha);
         }
-        
+
         if (certs == null || certs.length == 0) {
             return null;
         }
-        
+
         return Arrays.copyOf(certs, certs.length, X509Certificate[].class);
     }
 
     /**
-     * Get an X509 Certificate (chain) of the X500Principal argument in the supplied KeyStore 
+     * Get an X509 Certificate (chain) of the X500Principal argument in the supplied KeyStore
      * @param thumbprint
      * @param store The KeyStore
      * @return an X509 Certificate (chain)
      * @throws WSSecurityException
      */
     private Certificate[] getCertificates(
-        byte[] thumbprint, 
-        KeyStore store,
-        MessageDigest sha
+            byte[] thumbprint,
+            KeyStore store,
+            MessageDigest sha
     ) throws WSSecurityException {
         try {
             for (Enumeration<String> e = store.aliases(); e.hasMoreElements();) {
@@ -1181,8 +1195,8 @@ public class Merlin extends CryptoBase {
                         sha.update(x509cert.getEncoded());
                     } catch (CertificateEncodingException ex) {
                         throw new WSSecurityException(
-                            WSSecurityException.ErrorCode.SECURITY_TOKEN_UNAVAILABLE, ex,
-                            "encodeError"
+                                WSSecurityException.ErrorCode.SECURITY_TOKEN_UNAVAILABLE, ex,
+                                "encodeError"
                         );
                     }
                     byte[] data = sha.digest();
@@ -1194,12 +1208,12 @@ public class Merlin extends CryptoBase {
             }
         } catch (KeyStoreException e) {
             throw new WSSecurityException(
-                WSSecurityException.ErrorCode.FAILURE, e, "keystore"
+                    WSSecurityException.ErrorCode.FAILURE, e, "keystore"
             );
         }
         return new Certificate[]{};
     }
-    
+
     /**
      * Get an X509 Certificate (chain) according to a given SubjectKeyIdentifier.
      *
@@ -1216,24 +1230,24 @@ public class Merlin extends CryptoBase {
         if ((certs == null || certs.length == 0) && truststore != null) {
             certs = getCertificates(skiBytes, truststore);
         }
-        
+
         if (certs == null || certs.length == 0) {
             return null;
         }
-        
+
         return Arrays.copyOf(certs, certs.length, X509Certificate[].class);
     }
-    
+
     /**
-     * Get an X509 Certificate (chain) of the X500Principal argument in the supplied KeyStore 
+     * Get an X509 Certificate (chain) of the X500Principal argument in the supplied KeyStore
      * @param skiBytes
      * @param store The KeyStore
      * @return an X509 Certificate (chain)
      * @throws WSSecurityException
      */
     private Certificate[] getCertificates(
-        byte[] skiBytes, 
-        KeyStore store
+            byte[] skiBytes,
+            KeyStore store
     ) throws WSSecurityException {
         try {
             for (Enumeration<String> e = store.aliases(); e.hasMoreElements();) {
@@ -1260,12 +1274,12 @@ public class Merlin extends CryptoBase {
             }
         } catch (KeyStoreException e) {
             throw new WSSecurityException(
-                WSSecurityException.ErrorCode.FAILURE, e, "keystore"
+                    WSSecurityException.ErrorCode.FAILURE, e, "keystore"
             );
         }
         return new Certificate[]{};
     }
-    
+
     /**
      * Get an X509 Certificate (chain) according to a given DN of the subject of the certificate
      *
@@ -1289,7 +1303,7 @@ public class Merlin extends CryptoBase {
         } catch (java.lang.IllegalArgumentException ex) {
             subject = createBCX509Name(subjectDN);
         }
-        
+
         Certificate[] certs = null;
         if (keystore != null) {
             certs = getCertificates(subject, keystore);
@@ -1299,18 +1313,18 @@ public class Merlin extends CryptoBase {
         if ((certs == null || certs.length == 0) && truststore != null) {
             certs = getCertificates(subject, truststore);
         }
-        
+
         if (certs == null || certs.length == 0) {
             return null;
         }
-        
+
         return Arrays.copyOf(certs, certs.length, X509Certificate[].class);
     }
-    
+
     /**
      * Get an X509 Certificate (chain) that correspond to the identifier. For this implementation,
      * the identifier corresponds to the KeyStore alias.
-     * 
+     *
      * @param identifier The identifier that corresponds to the returned certs
      * @return an X509 Certificate (chain) that corresponds to the identifier
      */
@@ -1352,9 +1366,9 @@ public class Merlin extends CryptoBase {
 
         return Arrays.copyOf(certs, certs.length, X509Certificate[].class);
     }
-    
+
     /**
-     * Find the Public Key in a keystore. 
+     * Find the Public Key in a keystore.
      */
     private boolean findPublicKeyInKeyStore(PublicKey publicKey, KeyStore keyStoreToSearch) {
         if (keyStoreToSearch == null) {
@@ -1387,16 +1401,16 @@ public class Merlin extends CryptoBase {
         }
         return false;
     }
-    
+
     /**
-     * Get an X509 Certificate (chain) of the X500Principal argument in the supplied KeyStore 
+     * Get an X509 Certificate (chain) of the X500Principal argument in the supplied KeyStore
      * @param subjectRDN either an X500Principal or a BouncyCastle X509Name instance.
      * @param store The KeyStore
      * @return an X509 Certificate (chain)
      * @throws WSSecurityException
      */
-    private Certificate[] getCertificates(Object subjectRDN, KeyStore store) 
-        throws WSSecurityException {
+    private Certificate[] getCertificates(Object subjectRDN, KeyStore store)
+            throws WSSecurityException {
         try {
             for (Enumeration<String> e = store.aliases(); e.hasMoreElements();) {
                 String alias = e.nextElement();
@@ -1423,12 +1437,12 @@ public class Merlin extends CryptoBase {
             }
         } catch (KeyStoreException e) {
             throw new WSSecurityException(
-                WSSecurityException.ErrorCode.FAILURE, e, "keystore"
+                    WSSecurityException.ErrorCode.FAILURE, e, "keystore"
             );
         }
         return new Certificate[]{};
     }
-    
+
     private static String createKeyStoreErrorMessage(KeyStore keystore) throws KeyStoreException {
         Enumeration<String> aliases = keystore.aliases();
         StringBuilder sb = new StringBuilder(keystore.size() * 7);
@@ -1441,12 +1455,12 @@ public class Merlin extends CryptoBase {
             firstAlias = false;
         }
         String msg = " in keystore of type [" + keystore.getType()
-            + "] from provider [" + keystore.getProvider()
-            + "] with size [" + keystore.size() + "] and aliases: {"
-            + sb.toString() + "}";
+                + "] from provider [" + keystore.getProvider()
+                + "] with size [" + keystore.size() + "] and aliases: {"
+                + sb.toString() + "}";
         return msg;
     }
-    
+
     /**
      * Get an implementation-specific identifier that corresponds to the X509Certificate. In
      * this case, the identifier is the KeyStore alias.
@@ -1455,11 +1469,11 @@ public class Merlin extends CryptoBase {
      * @return An implementation-specific identifier that corresponds to the X509Certificate
      */
     private String getIdentifier(X509Certificate cert, KeyStore store)
-        throws WSSecurityException {
+            throws WSSecurityException {
         try {
             for (Enumeration<String> e = store.aliases(); e.hasMoreElements();) {
                 String alias = e.nextElement();
-                
+
                 Certificate[] certs = store.getCertificateChain(alias);
                 Certificate retrievedCert = null;
                 if (certs == null || certs.length == 0) {
@@ -1483,7 +1497,7 @@ public class Merlin extends CryptoBase {
         }
         return null;
     }
-    
+
     /**
      * Get a password from the CallbackHandler
      * @param identifier The identifier to give to the Callback
@@ -1492,46 +1506,46 @@ public class Merlin extends CryptoBase {
      * @throws WSSecurityException
      */
     private String getPassword(
-        String identifier,
-        CallbackHandler cb
+            String identifier,
+            CallbackHandler cb
     ) throws WSSecurityException {
-        WSPasswordCallback pwCb = 
-            new WSPasswordCallback(identifier, WSPasswordCallback.DECRYPT);
+        WSPasswordCallback pwCb =
+                new WSPasswordCallback(identifier, WSPasswordCallback.DECRYPT);
         try {
             Callback[] callbacks = new Callback[]{pwCb};
             cb.handle(callbacks);
         } catch (IOException e) {
             throw new WSSecurityException(
-                WSSecurityException.ErrorCode.FAILURE, e,
-                "noPassword", new Object[] {identifier}
+                    WSSecurityException.ErrorCode.FAILURE, e,
+                    "noPassword", new Object[] {identifier}
             );
         } catch (UnsupportedCallbackException e) {
             throw new WSSecurityException(
-                WSSecurityException.ErrorCode.FAILURE, e,
-                "noPassword", new Object[] {identifier}
+                    WSSecurityException.ErrorCode.FAILURE, e,
+                    "noPassword", new Object[] {identifier}
             );
         }
 
         return pwCb.getPassword();
     }
-    
+
     protected String decryptPassword(String password, PasswordEncryptor passwordEncryptor) {
         if (password.startsWith(ENCRYPTED_PASSWORD_PREFIX)
-            && password.endsWith(ENCRYPTED_PASSWORD_SUFFIX)) {
+                && password.endsWith(ENCRYPTED_PASSWORD_SUFFIX)) {
             if (passwordEncryptor == null) {
-                String error = 
-                    "The Crypto properties has an encrypted password, but no PasswordEncryptor is configured!";
+                String error =
+                        "The Crypto properties has an encrypted password, but no PasswordEncryptor is configured!";
                 LOG.debug(error);
                 return password;
             }
-            String substring = password.substring(ENCRYPTED_PASSWORD_PREFIX.length(), 
-                                                  password.length() - 1);
+            String substring = password.substring(ENCRYPTED_PASSWORD_PREFIX.length(),
+                    password.length() - 1);
             return passwordEncryptor.decrypt(substring);
         }
-        
+
         return password;
     }
-    
+
     public void setPasswordEncryptor(PasswordEncryptor passwordEncryptor) {
         this.passwordEncryptor = passwordEncryptor;
     }
