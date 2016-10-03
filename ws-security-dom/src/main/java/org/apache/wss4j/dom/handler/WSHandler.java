@@ -1465,7 +1465,25 @@ public abstract class WSHandler {
                 reqData.setSubjectCertConstraints(subjectCertConstraints);
             }
         }
-        
+        String issuerCertConstraintsStringValue =
+                    getString(WSHandlerConstants.SIG_ISSUER_CERT_CONSTRAINTS, reqData.getMsgContext());
+                if (certConstraints != null) {
+                    String[] issuerCertConstraintsList = issuerCertConstraintsStringValue.split(",");
+                    if (issuerCertConstraintsList != null) {
+                        Collection<Pattern> issuerCertConstraints =
+                            new ArrayList<Pattern>(issuerCertConstraintsList.length);
+                        for (String certConstraint : issuerCertConstraintsList) {
+                            try {
+                                issuerCertConstraints.add(Pattern.compile(certConstraint.trim()));
+                            } catch (PatternSyntaxException ex) {
+                                LOG.debug(ex.getMessage(), ex);
+                                throw new WSSecurityException(WSSecurityException.ErrorCode.FAILURE, ex);
+                            }
+                        }
+                        reqData.setIssuerDNPatterns(issuerCertConstraints);
+                    }
+                }
+
         boolean expandXOP = 
             decodeBooleanConfigValue(
                 reqData, WSHandlerConstants.EXPAND_XOP_INCLUDE_FOR_SIGNATURE, true
