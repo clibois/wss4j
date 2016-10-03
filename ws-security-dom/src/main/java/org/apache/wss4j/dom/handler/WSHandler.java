@@ -1467,7 +1467,7 @@ public abstract class WSHandler {
         }
         String issuerCertConstraintsStringValue =
                     getString(WSHandlerConstants.SIG_ISSUER_CERT_CONSTRAINTS, reqData.getMsgContext());
-                if (certConstraints != null) {
+                if (issuerCertConstraintsStringValue != null) {
                     String[] issuerCertConstraintsList = issuerCertConstraintsStringValue.split(",");
                     if (issuerCertConstraintsList != null) {
                         Collection<Pattern> issuerCertConstraints =
